@@ -258,7 +258,7 @@ namespace TcpDebugger
             TextRenderer.DrawText(g, "TCP 调试助手",
                 new Font("Microsoft YaHei UI", 10.5F, FontStyle.Bold),
                 new Point(40, 10), Theme.BarInk);
-            TextRenderer.DrawText(g, "v1.2.0",
+            TextRenderer.DrawText(g, "v2.0.0",
                 Theme.Ui, new Point(178, 13), Color.FromArgb(150, Theme.BarInk));
         }
     }
@@ -564,7 +564,7 @@ namespace TcpDebugger
         // ================= 界面 =================
         void BuildUi()
         {
-            Text = "TCP 调试助手 v1.2.0";
+            Text = "TCP 调试助手 v2.0.0";
             StartPosition = FormStartPosition.CenterScreen;
             Size = new Size(1100, 770);
             MinimumSize = new Size(940, 640);
