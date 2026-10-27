@@ -17,7 +17,7 @@
 
 ## 🚀 使用
 
-1. 直接下载 [Release](../../releases) 中的 `TCP调试助手.exe`，双击运行（Windows 7+，需 .NET Framework 4.x，系统自带）；
+1. 到 [Releases](https://github.com/MM121202/tcp-debug-assistant/releases/latest) 下载 `TCP-Debug-Assistant.exe`，双击运行（Windows 7+，需 .NET Framework 4.x，系统自带）；
 2. 选择模式：
    - **客户端**：填服务器地址 + 端口 → 点「连接」
    - **服务器**：填本机监听端口 → 点「开始监听」
