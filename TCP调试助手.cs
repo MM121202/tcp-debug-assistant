@@ -1,5 +1,7 @@
 // ============================================================
 //  TCP 调试助手 (C# WinForms, 单文件, 无第三方依赖)
+//  界面风格：Industrial Minimal — 工业灰蓝配色、扁平卡片、
+//            1px 描边、方角控件、状态指示灯、等宽数据显示
 //  功能：TCP 客户端 / TCP 服务器双模式、HEX/ASCII 收发、
 //        多客户端管理(定向/广播)、时间戳、循环发送、
 //        RX/TX 字节计数、日志保存
@@ -9,6 +11,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -18,6 +21,132 @@ using System.Windows.Forms;
 
 namespace TcpDebugger
 {
+    // ============ 设计系统：工业简洁 (Industrial Minimal) ============
+    static class Theme
+    {
+        public static readonly Color Canvas = Color.FromArgb(237, 239, 243);   // 窗体底
+        public static readonly Color Surface = Color.White;                     // 卡片面
+        public static readonly Color Line = Color.FromArgb(205, 211, 219);      // 描边
+        public static readonly Color LineSoft = Color.FromArgb(230, 234, 240);  // 分隔线
+        public static readonly Color Ink = Color.FromArgb(26, 30, 36);          // 主文字
+        public static readonly Color Sub = Color.FromArgb(106, 115, 126);       // 次要文字
+        public static readonly Color Accent = Color.FromArgb(22, 86, 158);      // 工业蓝
+        public static readonly Color AccentHover = Color.FromArgb(17, 70, 131);
+        public static readonly Color AccentPress = Color.FromArgb(12, 55, 105);
+        public static readonly Color Hover = Color.FromArgb(243, 245, 249);
+        public static readonly Color Press = Color.FromArgb(228, 232, 239);
+        public static readonly Color Ok = Color.FromArgb(26, 127, 62);          // 在线
+        public static readonly Color Warn = Color.FromArgb(193, 96, 12);        // 进行中
+        public static readonly Color Err = Color.FromArgb(196, 44, 44);         // 故障
+        public static readonly Color Idle = Color.FromArgb(152, 160, 171);      // 待机
+
+        public static readonly Font Ui = new Font("Microsoft YaHei UI", 9F);
+        public static readonly Font UiBold = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
+        public static readonly Font Mono = new Font("Consolas", 10F);
+    }
+
+    // 扁平描边卡片
+    class Card : Panel
+    {
+        public Card()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                     ControlStyles.OptimizedDoubleBuffer, true);
+            BackColor = Theme.Surface;
+            Padding = new Padding(1);
+        }
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            using (Pen p = new Pen(Theme.Line))
+                e.Graphics.DrawRectangle(p, 0, 0, Width - 1, Height - 1);
+        }
+    }
+
+    // 扁平按钮
+    class FlatButton : Button
+    {
+        public bool Active;
+        public FlatButton()
+        {
+            FlatStyle = FlatStyle.Flat;
+            FlatAppearance.BorderSize = 1;
+            FlatAppearance.BorderColor = Theme.Line;
+            FlatAppearance.MouseOverBackColor = Theme.Hover;
+            FlatAppearance.MouseDownBackColor = Theme.Press;
+            BackColor = Theme.Surface;
+            ForeColor = Theme.Ink;
+            UseVisualStyleBackColor = false;
+            Height = 26;
+            Font = Theme.Ui;
+        }
+        public void SetPrimary()
+        {
+            BackColor = Theme.Accent;
+            ForeColor = Color.White;
+            FlatAppearance.BorderColor = Theme.Accent;
+            FlatAppearance.MouseOverBackColor = Theme.AccentHover;
+            FlatAppearance.MouseDownBackColor = Theme.AccentPress;
+            Font = Theme.UiBold;
+        }
+        public void SetDanger()
+        {
+            BackColor = Theme.Err;
+            ForeColor = Color.White;
+            FlatAppearance.BorderColor = Theme.Err;
+            FlatAppearance.MouseOverBackColor = Color.FromArgb(168, 36, 36);
+            FlatAppearance.MouseDownBackColor = Color.FromArgb(140, 28, 28);
+            Font = Theme.UiBold;
+        }
+        public void SetNeutral()
+        {
+            BackColor = Theme.Surface;
+            ForeColor = Theme.Ink;
+            FlatAppearance.BorderColor = Theme.Line;
+            FlatAppearance.MouseOverBackColor = Theme.Hover;
+            FlatAppearance.MouseDownBackColor = Theme.Press;
+            Font = Theme.Ui;
+        }
+        public void SetActive(bool on)
+        {
+            Active = on;
+            if (on)
+            {
+                BackColor = Theme.Accent;
+                ForeColor = Color.White;
+                FlatAppearance.BorderColor = Theme.Accent;
+                FlatAppearance.MouseOverBackColor = Theme.AccentHover;
+                FlatAppearance.MouseDownBackColor = Theme.AccentPress;
+                Font = Theme.UiBold;
+            }
+            else SetNeutral();
+        }
+    }
+
+    // 状态指示灯
+    class Led : Control
+    {
+        Color col = Theme.Idle;
+        public Led()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
+            Size = new Size(12, 12);
+            BackColor = Color.Transparent;
+            Margin = new Padding(0, 7, 0, 0);
+        }
+        public void Set(Color c) { col = c; Invalidate(); }
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (SolidBrush b = new SolidBrush(col))
+                e.Graphics.FillEllipse(b, 1, 1, Width - 3, Height - 3);
+            using (Pen p = new Pen(Color.FromArgb(70, 0, 0, 0)))
+                e.Graphics.DrawEllipse(p, 1, 1, Width - 3, Height - 3);
+        }
+    }
+
     static class Program
     {
         [STAThread]
@@ -39,16 +168,17 @@ namespace TcpDebugger
 
     class MainForm : Form
     {
-        // ---------- 连接区 ----------
-        ComboBox cboMode;
+        // ---------- 控制条 ----------
+        FlatButton btnModeClient, btnModeServer;
         TextBox txtHost, txtPort;
-        Button btnConnect;
+        FlatButton btnConnect;
         Label lblStatus;
+        Led ledStatus;
 
         // ---------- 接收区 ----------
         RichTextBox txtRecv;
         CheckBox chkHexView, chkTimestamp;
-        Button btnClearRecv, btnSaveLog;
+        FlatButton btnClearRecv, btnSaveLog;
         Label lblClientsTitle;
         ListBox lstClients;
 
@@ -57,7 +187,7 @@ namespace TcpDebugger
         CheckBox chkHexSend, chkCrlf, chkLoop;
         TextBox txtInterval;
         ComboBox cboEncoding;
-        Button btnSend, btnClearSend;
+        FlatButton btnSend, btnClearSend;
         Label lblCounters;
 
         // ---------- 状态 ----------
@@ -77,7 +207,7 @@ namespace TcpDebugger
             loopTimer.Interval = 1000;
             loopTimer.Tick += delegate { if (running) SendData(true); };
             UpdateCounters();
-            SetStatus("未连接", Color.Gray);
+            SetStatus("待机 · 未连接", Theme.Idle);
             FormClosing += OnFormClosing;
         }
 
@@ -86,272 +216,392 @@ namespace TcpDebugger
         {
             Text = "TCP 调试助手";
             StartPosition = FormStartPosition.CenterScreen;
-            Size = new Size(1060, 720);
-            MinimumSize = new Size(880, 600);
-            Font = new Font("Microsoft YaHei UI", 9F);
+            Size = new Size(1080, 740);
+            MinimumSize = new Size(920, 620);
+            Font = Theme.Ui;
+            BackColor = Theme.Canvas;
 
-            TableLayoutPanel main = new TableLayoutPanel();
-            main.Dock = DockStyle.Fill;
-            main.Padding = new Padding(8);
-            main.ColumnCount = 1;
-            main.RowCount = 6;
-            main.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
-            main.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
-            main.RowStyles.Add(new RowStyle(SizeType.Percent, 58));
-            main.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
-            main.RowStyles.Add(new RowStyle(SizeType.Percent, 42));
-            main.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
-            Controls.Add(main);
+            TableLayoutPanel root = new TableLayoutPanel();
+            root.Dock = DockStyle.Fill;
+            root.Padding = new Padding(10);
+            root.ColumnCount = 1;
+            root.RowCount = 4;
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 196));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+            Controls.Add(root);
 
-            // ----- 第0行：连接参数 -----
-            FlowLayoutPanel top = new FlowLayoutPanel();
-            top.Dock = DockStyle.Fill;
-            top.WrapContents = false;
-            top.Padding = new Padding(0, 6, 0, 0);
+            // ---------- 第0行：控制条 ----------
+            Card barCard = new Card();
+            barCard.Dock = DockStyle.Fill;
+            barCard.Margin = new Padding(0, 0, 0, 8);
+            barCard.Padding = new Padding(1);
 
-            Label l1 = new Label();
-            l1.Text = "模式:";
-            l1.AutoSize = true;
-            l1.Margin = new Padding(0, 8, 2, 0);
-            top.Controls.Add(l1);
+            TableLayoutPanel bar = new TableLayoutPanel();
+            bar.Dock = DockStyle.Fill;
+            bar.ColumnCount = 2;
+            bar.RowCount = 1;
+            bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            barCard.Controls.Add(bar);
 
-            cboMode = new ComboBox();
-            cboMode.DropDownStyle = ComboBoxStyle.DropDownList;
-            cboMode.Items.Add("TCP 客户端");
-            cboMode.Items.Add("TCP 服务器");
-            cboMode.SelectedIndex = 0;
-            cboMode.Width = 108;
-            cboMode.Margin = new Padding(0, 4, 10, 0);
-            cboMode.SelectedIndexChanged += delegate { OnModeChanged(); };
-            top.Controls.Add(cboMode);
+            FlowLayoutPanel barLeft = new FlowLayoutPanel();
+            barLeft.Dock = DockStyle.Fill;
+            barLeft.WrapContents = false;
+            barLeft.Padding = new Padding(10, 8, 0, 0);
 
-            Label l2 = new Label();
-            l2.Text = "地址:";
-            l2.AutoSize = true;
-            l2.Margin = new Padding(0, 8, 2, 0);
-            top.Controls.Add(l2);
+            Label cap1 = SmallCap("模式");
+            barLeft.Controls.Add(cap1);
 
+            btnModeClient = new FlatButton();
+            btnModeClient.Text = "客户端";
+            btnModeClient.Width = 76;
+            btnModeClient.Margin = new Padding(0, 0, 0, 0);
+            btnModeClient.Click += delegate { SetMode(false); };
+            barLeft.Controls.Add(btnModeClient);
+
+            btnModeServer = new FlatButton();
+            btnModeServer.Text = "服务器";
+            btnModeServer.Width = 76;
+            btnModeServer.Margin = new Padding(4, 0, 14, 0);
+            btnModeServer.Click += delegate { SetMode(true); };
+            barLeft.Controls.Add(btnModeServer);
+
+            barLeft.Controls.Add(SmallCap("地址"));
             txtHost = new TextBox();
             txtHost.Text = "127.0.0.1";
-            txtHost.Width = 150;
-            txtHost.Margin = new Padding(0, 4, 10, 0);
-            top.Controls.Add(txtHost);
+            txtHost.Width = 148;
+            txtHost.BorderStyle = BorderStyle.FixedSingle;
+            txtHost.BackColor = Theme.Surface;
+            txtHost.ForeColor = Theme.Ink;
+            txtHost.Margin = new Padding(0, 3, 14, 0);
+            barLeft.Controls.Add(txtHost);
 
-            Label l3 = new Label();
-            l3.Text = "端口:";
-            l3.AutoSize = true;
-            l3.Margin = new Padding(0, 8, 2, 0);
-            top.Controls.Add(l3);
-
+            barLeft.Controls.Add(SmallCap("端口"));
             txtPort = new TextBox();
             txtPort.Text = "8899";
-            txtPort.Width = 64;
-            txtPort.Margin = new Padding(0, 4, 10, 0);
-            top.Controls.Add(txtPort);
+            txtPort.Width = 62;
+            txtPort.BorderStyle = BorderStyle.FixedSingle;
+            txtPort.BackColor = Theme.Surface;
+            txtPort.ForeColor = Theme.Ink;
+            txtPort.Margin = new Padding(0, 3, 14, 0);
+            barLeft.Controls.Add(txtPort);
 
-            btnConnect = new Button();
-            btnConnect.Text = "连接";
-            btnConnect.Width = 92;
-            btnConnect.Height = 26;
-            btnConnect.Margin = new Padding(0, 4, 12, 0);
+            btnConnect = new FlatButton();
+            btnConnect.Text = "连 接";
+            btnConnect.Width = 96;
+            btnConnect.Margin = new Padding(0, 0, 0, 0);
             btnConnect.Click += delegate { OnConnectClick(); };
-            top.Controls.Add(btnConnect);
+            barLeft.Controls.Add(btnConnect);
 
+            bar.Controls.Add(barLeft, 0, 0);
+
+            FlowLayoutPanel barRight = new FlowLayoutPanel();
+            barRight.AutoSize = true;
+            barRight.WrapContents = false;
+            barRight.Padding = new Padding(0, 0, 12, 0);
+            ledStatus = new Led();
+            barRight.Controls.Add(ledStatus);
             lblStatus = new Label();
-            lblStatus.Text = "未连接";
+            lblStatus.Text = "待机 · 未连接";
             lblStatus.AutoSize = true;
-            lblStatus.Margin = new Padding(0, 8, 0, 0);
-            top.Controls.Add(lblStatus);
+            lblStatus.ForeColor = Theme.Sub;
+            lblStatus.Margin = new Padding(4, 5, 0, 0);
+            barRight.Controls.Add(lblStatus);
+            bar.Controls.Add(barRight, 1, 0);
 
-            main.Controls.Add(top, 0, 0);
+            root.Controls.Add(barCard, 0, 0);
 
-            // ----- 第1行：接收工具条 -----
-            FlowLayoutPanel rtb = new FlowLayoutPanel();
-            rtb.Dock = DockStyle.Fill;
-            rtb.WrapContents = false;
-            rtb.Padding = new Padding(0, 4, 0, 0);
+            // ---------- 第1行：接收区 + 客户端列表 ----------
+            TableLayoutPanel mid = new TableLayoutPanel();
+            mid.Dock = DockStyle.Fill;
+            mid.ColumnCount = 2;
+            mid.RowCount = 1;
+            mid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            mid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 232));
 
-            chkHexView = new CheckBox();
-            chkHexView.Text = "HEX 显示";
-            chkHexView.AutoSize = true;
-            chkHexView.Margin = new Padding(0, 4, 14, 0);
-            rtb.Controls.Add(chkHexView);
-
-            chkTimestamp = new CheckBox();
-            chkTimestamp.Text = "时间戳";
-            chkTimestamp.AutoSize = true;
-            chkTimestamp.Checked = true;
-            chkTimestamp.Margin = new Padding(0, 4, 14, 0);
-            rtb.Controls.Add(chkTimestamp);
-
-            btnClearRecv = new Button();
-            btnClearRecv.Text = "清空接收";
-            btnClearRecv.Width = 84;
-            btnClearRecv.Height = 24;
-            btnClearRecv.Margin = new Padding(0, 0, 8, 0);
-            btnClearRecv.Click += delegate { txtRecv.Clear(); };
-            rtb.Controls.Add(btnClearRecv);
-
-            btnSaveLog = new Button();
-            btnSaveLog.Text = "保存日志";
-            btnSaveLog.Width = 84;
-            btnSaveLog.Height = 24;
-            btnSaveLog.Click += delegate { SaveLog(); };
-            rtb.Controls.Add(btnSaveLog);
-
-            main.Controls.Add(rtb, 0, 1);
-
-            // ----- 第2行：接收区 + 客户端列表 -----
-            TableLayoutPanel recvWrap = new TableLayoutPanel();
-            recvWrap.Dock = DockStyle.Fill;
-            recvWrap.ColumnCount = 2;
-            recvWrap.RowCount = 1;
-            recvWrap.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            recvWrap.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 215));
+            Card recvCard = new Card();
+            recvCard.Dock = DockStyle.Fill;
+            recvCard.Margin = new Padding(0, 0, 8, 8);
 
             txtRecv = new RichTextBox();
             txtRecv.Dock = DockStyle.Fill;
             txtRecv.ReadOnly = true;
-            txtRecv.BackColor = Color.White;
-            txtRecv.Font = new Font("Consolas", 10F);
+            txtRecv.BorderStyle = BorderStyle.None;
+            txtRecv.BackColor = Theme.Surface;
+            txtRecv.ForeColor = Theme.Ink;
+            txtRecv.Font = Theme.Mono;
+            txtRecv.WordWrap = false;
+            txtRecv.ScrollBars = RichTextBoxScrollBars.Both;
             txtRecv.HideSelection = false;
-            recvWrap.Controls.Add(txtRecv, 0, 0);
+            recvCard.Controls.Add(txtRecv);
 
-            TableLayoutPanel cliWrap = new TableLayoutPanel();
-            cliWrap.Dock = DockStyle.Fill;
-            cliWrap.ColumnCount = 1;
-            cliWrap.RowCount = 2;
-            cliWrap.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
-            cliWrap.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            // 标题栏最后加入 => 最先停靠，内容区才不会被压住
+            Panel recvHead = MakeRecvHead();
+            recvCard.Controls.Add(recvHead);
+            mid.Controls.Add(recvCard, 0, 0);
 
+            Card cliCard = new Card();
+            cliCard.Dock = DockStyle.Fill;
+            cliCard.Margin = new Padding(0, 0, 0, 8);
             lblClientsTitle = new Label();
-            lblClientsTitle.Text = "在线客户端（未选=广播）";
+            lblClientsTitle.Text = "客户端 · CLIENTS";
             lblClientsTitle.Dock = DockStyle.Fill;
             lblClientsTitle.TextAlign = ContentAlignment.MiddleLeft;
-            lblClientsTitle.ForeColor = Color.DimGray;
-            cliWrap.Controls.Add(lblClientsTitle, 0, 0);
+            lblClientsTitle.ForeColor = Theme.Sub;
+            lblClientsTitle.Font = Theme.UiBold;
+            lblClientsTitle.Padding = new Padding(10, 0, 0, 0);
+            Panel cliHead = MakeHead(lblClientsTitle);
 
             lstClients = new ListBox();
             lstClients.Dock = DockStyle.Fill;
+            lstClients.BorderStyle = BorderStyle.None;
+            lstClients.BackColor = Theme.Surface;
+            lstClients.ForeColor = Theme.Ink;
+            lstClients.Font = new Font("Consolas", 9.5F);
+            lstClients.IntegralHeight = false;
             lstClients.SelectionMode = SelectionMode.MultiExtended;
-            cliWrap.Controls.Add(lstClients, 0, 1);
+            cliCard.Controls.Add(lstClients);
+            cliCard.Controls.Add(cliHead);
+            mid.Controls.Add(cliCard, 1, 0);
 
-            recvWrap.Controls.Add(cliWrap, 1, 0);
-            main.Controls.Add(recvWrap, 0, 2);
+            root.Controls.Add(mid, 0, 1);
 
-            // ----- 第3行：发送工具条 -----
-            FlowLayoutPanel stb = new FlowLayoutPanel();
-            stb.Dock = DockStyle.Fill;
-            stb.WrapContents = false;
-            stb.Padding = new Padding(0, 4, 0, 0);
+            // ---------- 第2行：发送区 ----------
+            Card sendCard = new Card();
+            sendCard.Dock = DockStyle.Fill;
+            sendCard.Margin = new Padding(0, 0, 0, 8);
+
+            btnSend = new FlatButton();
+            btnSend.Text = "发 送";
+            btnSend.Width = 92;
+            btnSend.Margin = new Padding(0, 3, 6, 0);
+            btnSend.Click += delegate { SendData(false); };
+            btnClearSend = new FlatButton();
+            btnClearSend.Text = "清空";
+            btnClearSend.Width = 66;
+            btnClearSend.Margin = new Padding(0, 3, 10, 0);
+            btnClearSend.Click += delegate { txtSend.Clear(); };
+
+            FlowLayoutPanel optRow = new FlowLayoutPanel();
+            optRow.Dock = DockStyle.Top;
+            optRow.Height = 32;
+            optRow.WrapContents = false;
+            optRow.BackColor = Theme.Surface;
+            optRow.Padding = new Padding(10, 4, 0, 0);
 
             chkHexSend = new CheckBox();
             chkHexSend.Text = "HEX 发送";
             chkHexSend.AutoSize = true;
+            chkHexSend.ForeColor = Theme.Ink;
             chkHexSend.Margin = new Padding(0, 4, 14, 0);
-            stb.Controls.Add(chkHexSend);
+            optRow.Controls.Add(chkHexSend);
 
             chkCrlf = new CheckBox();
             chkCrlf.Text = "末尾加 \\r\\n";
             chkCrlf.AutoSize = true;
             chkCrlf.Checked = true;
+            chkCrlf.ForeColor = Theme.Ink;
             chkCrlf.Margin = new Padding(0, 4, 14, 0);
-            stb.Controls.Add(chkCrlf);
+            optRow.Controls.Add(chkCrlf);
 
-            Label l4 = new Label();
-            l4.Text = "编码:";
-            l4.AutoSize = true;
-            l4.Margin = new Padding(0, 8, 2, 0);
-            stb.Controls.Add(l4);
-
+            optRow.Controls.Add(SmallCap("编码"));
             cboEncoding = new ComboBox();
             cboEncoding.DropDownStyle = ComboBoxStyle.DropDownList;
+            cboEncoding.FlatStyle = FlatStyle.Flat;
+            cboEncoding.BackColor = Theme.Surface;
+            cboEncoding.ForeColor = Theme.Ink;
             cboEncoding.Items.Add("UTF-8");
             cboEncoding.Items.Add("GBK");
             cboEncoding.Items.Add("ASCII");
             cboEncoding.SelectedIndex = 0;
             cboEncoding.Width = 78;
-            cboEncoding.Margin = new Padding(0, 4, 14, 0);
-            stb.Controls.Add(cboEncoding);
+            cboEncoding.Margin = new Padding(0, 3, 14, 0);
+            optRow.Controls.Add(cboEncoding);
 
             chkLoop = new CheckBox();
             chkLoop.Text = "循环发送";
             chkLoop.AutoSize = true;
+            chkLoop.ForeColor = Theme.Ink;
             chkLoop.Margin = new Padding(0, 4, 6, 0);
             chkLoop.CheckedChanged += delegate { ApplyLoopTimer(); };
-            stb.Controls.Add(chkLoop);
+            optRow.Controls.Add(chkLoop);
 
             txtInterval = new TextBox();
             txtInterval.Text = "1000";
             txtInterval.Width = 52;
-            txtInterval.Margin = new Padding(0, 4, 2, 0);
+            txtInterval.BorderStyle = BorderStyle.FixedSingle;
+            txtInterval.BackColor = Theme.Surface;
+            txtInterval.ForeColor = Theme.Ink;
+            txtInterval.Margin = new Padding(0, 3, 2, 0);
             txtInterval.TextChanged += delegate { ApplyLoopTimer(); };
-            stb.Controls.Add(txtInterval);
+            optRow.Controls.Add(txtInterval);
 
-            Label l5 = new Label();
-            l5.Text = "ms";
-            l5.AutoSize = true;
-            l5.Margin = new Padding(0, 8, 14, 0);
-            stb.Controls.Add(l5);
+            Label lms = new Label();
+            lms.Text = "ms";
+            lms.AutoSize = true;
+            lms.ForeColor = Theme.Sub;
+            lms.Margin = new Padding(0, 6, 0, 0);
+            optRow.Controls.Add(lms);
 
-            btnSend = new Button();
-            btnSend.Text = "发 送";
-            btnSend.Width = 92;
-            btnSend.Height = 24;
-            btnSend.Margin = new Padding(0, 0, 8, 0);
-            btnSend.Click += delegate { SendData(false); };
-            stb.Controls.Add(btnSend);
-
-            btnClearSend = new Button();
-            btnClearSend.Text = "清空发送";
-            btnClearSend.Width = 84;
-            btnClearSend.Height = 24;
-            btnClearSend.Click += delegate { txtSend.Clear(); };
-            stb.Controls.Add(btnClearSend);
-
-            main.Controls.Add(stb, 0, 3);
-
-            // ----- 第4行：发送框 -----
             txtSend = new RichTextBox();
             txtSend.Dock = DockStyle.Fill;
-            txtSend.Font = new Font("Consolas", 10F);
+            txtSend.BorderStyle = BorderStyle.None;
+            txtSend.BackColor = Theme.Surface;
+            txtSend.ForeColor = Theme.Ink;
+            txtSend.Font = Theme.Mono;
+            txtSend.WordWrap = false;
+            txtSend.ScrollBars = RichTextBoxScrollBars.Both;
             txtSend.Text = "Hello TCP!";
             txtSend.KeyDown += OnSendKeyDown;
-            main.Controls.Add(txtSend, 0, 4);
+            sendCard.Controls.Add(txtSend);
+            sendCard.Controls.Add(optRow);
+            sendCard.Controls.Add(MakeHead("发送 · TX", btnSend, btnClearSend));
 
-            // ----- 第5行：计数与提示 -----
+            root.Controls.Add(sendCard, 0, 2);
+
+            // ---------- 第3行：状态栏 ----------
+            TableLayoutPanel sb = new TableLayoutPanel();
+            sb.Dock = DockStyle.Fill;
+            sb.ColumnCount = 2;
+            sb.RowCount = 1;
+            sb.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            sb.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
             lblCounters = new Label();
             lblCounters.Dock = DockStyle.Fill;
             lblCounters.TextAlign = ContentAlignment.MiddleLeft;
-            lblCounters.ForeColor = Color.DimGray;
-            main.Controls.Add(lblCounters, 0, 5);
+            lblCounters.ForeColor = Theme.Sub;
+            lblCounters.Padding = new Padding(2, 0, 0, 0);
+            sb.Controls.Add(lblCounters, 0, 0);
 
-            OnModeChanged();
+            Label hint = new Label();
+            hint.Text = "Ctrl+Enter 发送";
+            hint.AutoSize = true;
+            hint.ForeColor = Theme.Sub;
+            hint.TextAlign = ContentAlignment.MiddleRight;
+            hint.Padding = new Padding(0, 0, 2, 0);
+            sb.Controls.Add(hint, 1, 0);
+
+            root.Controls.Add(sb, 0, 3);
+
+            SetMode(false);
+        }
+
+        // ---- 界面小工具 ----
+        static Label SmallCap(string text)
+        {
+            Label l = new Label();
+            l.Text = text;
+            l.AutoSize = true;
+            l.ForeColor = Theme.Sub;
+            l.Margin = new Padding(0, 6, 6, 0);
+            return l;
+        }
+
+        // 带底部细分隔线的标题栏，右侧可放控件
+        Panel MakeHead(string title, params Control[] rightItems)
+        {
+            Label t = new Label();
+            t.Text = title;
+            t.Dock = DockStyle.Fill;
+            t.TextAlign = ContentAlignment.MiddleLeft;
+            t.ForeColor = Theme.Sub;
+            t.Font = Theme.UiBold;
+            t.Padding = new Padding(10, 0, 0, 0);
+            return MakeHead(t, rightItems);
+        }
+
+        Panel MakeHead(Label title, params Control[] rightItems)
+        {
+            TableLayoutPanel head = new TableLayoutPanel();
+            head.Dock = DockStyle.Top;
+            head.Height = 32;
+            head.BackColor = Theme.Surface;
+            head.ColumnCount = 2;
+            head.RowCount = 1;
+            head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            head.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            head.Controls.Add(title, 0, 0);
+
+            if (rightItems != null && rightItems.Length > 0)
+            {
+                FlowLayoutPanel flow = new FlowLayoutPanel();
+                flow.AutoSize = true;
+                flow.WrapContents = false;
+                flow.Padding = new Padding(0, 0, 8, 0);
+                foreach (Control c in rightItems)
+                {
+                    c.Margin = new Padding(c.Margin.Left, 3, c.Margin.Right, 0);
+                    flow.Controls.Add(c);
+                }
+                head.Controls.Add(flow, 1, 0);
+            }
+            head.Paint += delegate(object s, PaintEventArgs e)
+            {
+                using (Pen p = new Pen(Theme.LineSoft))
+                    e.Graphics.DrawLine(p, 0, head.Height - 1, head.Width, head.Height - 1);
+            };
+            return head;
+        }
+
+        Panel MakeRecvHead()
+        {
+            chkHexView = new CheckBox();
+            chkHexView.Text = "HEX 显示";
+            chkHexView.AutoSize = true;
+            chkHexView.ForeColor = Theme.Ink;
+            chkHexView.Margin = new Padding(0, 4, 14, 0);
+
+            chkTimestamp = new CheckBox();
+            chkTimestamp.Text = "时间戳";
+            chkTimestamp.AutoSize = true;
+            chkTimestamp.Checked = true;
+            chkTimestamp.ForeColor = Theme.Ink;
+            chkTimestamp.Margin = new Padding(0, 4, 14, 0);
+
+            btnClearRecv = new FlatButton();
+            btnClearRecv.Text = "清空";
+            btnClearRecv.Width = 62;
+            btnClearRecv.Margin = new Padding(0, 0, 6, 0);
+            btnClearRecv.Click += delegate { txtRecv.Clear(); };
+
+            btnSaveLog = new FlatButton();
+            btnSaveLog.Text = "保存日志";
+            btnSaveLog.Width = 80;
+            btnSaveLog.Click += delegate { SaveLog(); };
+
+            return MakeHead("接收 · RX", chkHexView, chkTimestamp, btnClearRecv, btnSaveLog);
         }
 
         // ================= 模式与状态 =================
-        void OnModeChanged()
+        void SetMode(bool server)
         {
-            isServerMode = cboMode.SelectedIndex == 1;
-            btnConnect.Text = running ? (isServerMode ? "停止监听" : "断开") : (isServerMode ? "开始监听" : "连接");
-            txtHost.Enabled = !isServerMode && !running;
-            lblClientsTitle.Text = isServerMode ? "在线客户端（未选=广播）" : "在线客户端（服务器模式可用）";
-            if (!isServerMode) lstClients.Enabled = false;
-            else lstClients.Enabled = true;
+            isServerMode = server;
+            btnModeClient.SetActive(!server);
+            btnModeServer.SetActive(server);
+            txtHost.Enabled = !server && !running;
+            lblClientsTitle.Text = server ? "客户端 · CLIENTS（不选=广播）" : "客户端 · CLIENTS（服务器模式）";
+            lstClients.Enabled = server;
+            btnConnect.Text = running ? (server ? "停止监听" : "断 开") : (server ? "开始监听" : "连 接");
         }
 
         void SetStatus(string text, Color color)
         {
             if (InvokeRequired) { BeginInvoke(new Action<string, Color>(SetStatus), text, color); return; }
             lblStatus.Text = text;
-            lblStatus.ForeColor = color;
+            lblStatus.ForeColor = color == Theme.Idle ? Theme.Sub : color;
+            ledStatus.Set(color);
         }
 
         void SetConnectUiRunning(bool run)
         {
             if (InvokeRequired) { BeginInvoke(new Action<bool>(SetConnectUiRunning), run); return; }
-            btnConnect.Text = run ? (isServerMode ? "停止监听" : "断开") : (isServerMode ? "开始监听" : "连接");
-            cboMode.Enabled = !run;
+            btnConnect.Text = run ? (isServerMode ? "停止监听" : "断 开") : (isServerMode ? "开始监听" : "连 接");
+            if (run) btnConnect.SetDanger(); else btnConnect.SetPrimary();
+            btnModeClient.Enabled = !run;
+            btnModeServer.Enabled = !run;
             txtPort.Enabled = !run;
             txtHost.Enabled = !run && !isServerMode;
         }
@@ -375,7 +625,7 @@ namespace TcpDebugger
             if (host.Length == 0) { MessageBox.Show("请输入服务器地址", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
             running = true;
             SetConnectUiRunning(true);
-            SetStatus("连接中...", Color.DarkOrange);
+            SetStatus("连接中…", Theme.Warn);
             Thread t = new Thread(delegate()
             {
                 Socket s = null;
@@ -387,14 +637,14 @@ namespace TcpDebugger
                     c.Sock = s;
                     c.Label = host + ":" + port;
                     clientConn = c;
-                    SetStatus("已连接 " + c.Label, Color.Green);
+                    SetStatus("已连接 · " + c.Label, Theme.Ok);
                     AppendSys("[系统] 已连接到 " + c.Label);
                     RecvLoop(s, c, true);
                 }
                 catch (Exception ex)
                 {
                     try { if (s != null) s.Close(); } catch { }
-                    SetStatus("连接失败", Color.Red);
+                    SetStatus("连接失败", Theme.Err);
                     AppendErr("[错误] 无法连接 " + host + ":" + port + " — " + ex.Message);
                     running = false;
                     SetConnectUiRunning(false);
@@ -415,7 +665,7 @@ namespace TcpDebugger
             }
             catch (Exception ex)
             {
-                SetStatus("监听失败", Color.Red);
+                SetStatus("监听失败", Theme.Err);
                 MessageBox.Show("无法监听端口 " + port + "：\r\n" + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 try { if (serverSocket != null) serverSocket.Close(); } catch { }
                 serverSocket = null;
@@ -423,7 +673,7 @@ namespace TcpDebugger
             }
             running = true;
             SetConnectUiRunning(true);
-            SetStatus("监听中 0.0.0.0:" + port, Color.DarkOrange);
+            SetStatus("监听中 · 0.0.0.0:" + port, Theme.Ok);
             AppendSys("[系统] 开始监听 0.0.0.0:" + port);
 
             Thread t = new Thread(AcceptLoop);
@@ -477,7 +727,7 @@ namespace TcpDebugger
                 {
                     running = false;
                     SetConnectUiRunning(false);
-                    SetStatus("连接已断开", Color.Red);
+                    SetStatus("连接已断开", Theme.Err);
                     AppendSys("[系统] 连接已断开");
                 }
                 else
@@ -502,13 +752,13 @@ namespace TcpDebugger
             if (chkTimestamp.Checked) pre = "[" + DateTime.Now.ToString("HH:mm:ss.fff") + "] ";
             if (isServerMode) pre += "<" + from + "> ";
             string body = chkHexView.Checked ? HexStr(data) : DecodeBytes(data);
-            AppendRaw(pre + body + "\r\n", Color.Black);
+            AppendRaw(pre + body + "\r\n", Theme.Ink);
         }
 
         // ================= 发送 =================
         void SendData(bool quiet)
         {
-            if (!running) { if (!quiet) SetStatus("未连接", Color.Red); return; }
+            if (!running) { if (!quiet) SetStatus("未连接", Theme.Err); return; }
             string text = txtSend.Text;
             byte[] data;
             if (chkHexSend.Checked)
@@ -530,7 +780,7 @@ namespace TcpDebugger
             }
 
             List<Socket> targets = GetTargetSockets();
-            if (targets.Count == 0) { if (!quiet) SetStatus("没有可发送的连接", Color.Red); return; }
+            if (targets.Count == 0) { if (!quiet) SetStatus("没有可发送的连接", Theme.Err); return; }
 
             int ok = 0;
             foreach (Socket s in targets)
@@ -538,7 +788,7 @@ namespace TcpDebugger
                 try { s.Send(data); ok++; }
                 catch { }
             }
-            if (ok == 0) { if (!quiet) SetStatus("发送失败（连接已断开）", Color.Red); return; }
+            if (ok == 0) { if (!quiet) SetStatus("发送失败（连接已断开）", Theme.Err); return; }
             Interlocked.Add(ref txBytes, data.Length * ok);
             UpdateCounters();
             if (!quiet)
@@ -546,7 +796,7 @@ namespace TcpDebugger
                 string pre = "";
                 if (chkTimestamp.Checked) pre = "[" + DateTime.Now.ToString("HH:mm:ss.fff") + "] ";
                 if (isServerMode && lstClients.SelectedItems.Count == 0) pre += "<广播> ";
-                AppendRaw(pre + (chkHexSend.Checked ? HexStr(data) : DecodeBytes(data)) + "\r\n", Color.Blue);
+                AppendRaw(pre + (chkHexSend.Checked ? HexStr(data) : DecodeBytes(data)) + "\r\n", Theme.Accent);
             }
         }
 
@@ -605,7 +855,7 @@ namespace TcpDebugger
             if (clientConn != null) { try { clientConn.Sock.Close(); } catch { } clientConn = null; }
             UpdateClientList();
             SetConnectUiRunning(false);
-            SetStatus("已断开", Color.Gray);
+            SetStatus("待机 · 已断开", Theme.Idle);
             AppendSys("[系统] 已断开");
         }
 
@@ -624,11 +874,11 @@ namespace TcpDebugger
             lock (connsLock) { foreach (ClientConn c in conns) lstClients.Items.Add(c); }
             lstClients.EndUpdate();
             if (running && isServerMode)
-                SetStatus("监听中，在线客户端 " + conns.Count + " 个", Color.DarkOrange);
+                SetStatus("监听中 · 在线 " + conns.Count + " 个客户端", Theme.Ok);
         }
 
-        void AppendSys(string s) { AppendRaw(s + "\r\n", Color.DimGray); }
-        void AppendErr(string s) { AppendRaw(s + "\r\n", Color.Red); }
+        void AppendSys(string s) { AppendRaw(s + "\r\n", Theme.Sub); }
+        void AppendErr(string s) { AppendRaw(s + "\r\n", Theme.Err); }
 
         void AppendRaw(string s, Color color)
         {
@@ -652,8 +902,7 @@ namespace TcpDebugger
             if (lblCounters.InvokeRequired) { try { lblCounters.BeginInvoke(new Action(UpdateCounters)); } catch { } return; }
             long rx = Interlocked.Read(ref rxBytes);
             long tx = Interlocked.Read(ref txBytes);
-            lblCounters.Text = "RX " + FmtBytes(rx) + "    TX " + FmtBytes(tx) +
-                "    |    Ctrl+Enter 发送；服务器模式选中客户端=定向，不选=广播";
+            lblCounters.Text = "RX " + FmtBytes(rx) + "    TX " + FmtBytes(tx);
         }
 
         static string FmtBytes(long n)
@@ -717,7 +966,7 @@ namespace TcpDebugger
                 try
                 {
                     File.WriteAllText(dlg.FileName, txtRecv.Text, Encoding.UTF8);
-                    SetStatus("日志已保存", Color.Green);
+                    SetStatus("日志已保存", Theme.Ok);
                 }
                 catch (Exception ex)
                 {
@@ -727,10 +976,7 @@ namespace TcpDebugger
         }
 
         // ================= 自动化测试接口 =================
-        internal void TestSetMode(bool server)
-        {
-            cboMode.SelectedIndex = server ? 1 : 0;
-        }
+        internal void TestSetMode(bool server) { SetMode(server); }
         internal void TestSetAddress(string host, string port)
         {
             txtHost.Text = host;
